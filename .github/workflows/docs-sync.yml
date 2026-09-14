@@ -1,0 +1,136 @@
+name: Documentation Sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      force_sync:
+        description: 'Force sync even without changes'
+        required: false
+        default: 'false'
+
+jobs:
+  validate:
+    name: Validate Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install -g markdownlint-cli gray-matter
+
+      - name: Lint Markdown files
+        run: |
+          markdownlint 'docs/**/*.md' --config .markdownlint.json || true
+
+      - name: Validate frontmatter
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const matter = require('gray-matter');
+
+          function validateFile(filePath) {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const { data } = matter(content);
+            const errors = [];
+
+            // Required fields
+            if (!data.title) {
+              errors.push(`Missing required field: title`);
+            }
+
+            // Validate category if present
+            const validCategories = ['get-started', 'developers', 'merchants', 'payment-methods', 'resources'];
+            if (data.category && !validCategories.includes(data.category)) {
+              errors.push(`Invalid category: ${data.category}. Must be one of: ${validCategories.join(', ')}`);
+            }
+
+            // Validate difficulty if present
+            const validDifficulties = ['beginner', 'intermediate', 'advanced'];
+            if (data.difficulty && !validDifficulties.includes(data.difficulty)) {
+              errors.push(`Invalid difficulty: ${data.difficulty}`);
+            }
+
+            return errors;
+          }
+
+          function walkDir(dir) {
+            const files = fs.readdirSync(dir);
+            let hasErrors = false;
+
+            for (const file of files) {
+              const filePath = path.join(dir, file);
+              const stat = fs.statSync(filePath);
+
+              if (stat.isDirectory()) {
+                if (walkDir(filePath)) hasErrors = true;
+              } else if (file.endsWith('.md')) {
+                const errors = validateFile(filePath);
+                if (errors.length > 0) {
+                  console.error(`\n❌ ${filePath}:`);
+                  errors.forEach(e => console.error(`   - ${e}`));
+                  hasErrors = true;
+                } else {
+                  console.log(`✓ ${filePath}`);
+                }
+              }
+            }
+
+            return hasErrors;
+          }
+
+          console.log('Validating frontmatter...\n');
+          const hasErrors = walkDir('docs');
+
+          if (hasErrors) {
+            process.exit(1);
+          } else {
+            console.log('\n✅ All files valid!');
+          }
+          EOF
+
+  notify-cms:
+    name: Notify CMS
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'push' || github.event.inputs.force_sync == 'true'
+    steps:
+      - name: Trigger CMS Sync
+        run: |
+          # The webhook is automatically triggered by GitHub
+          # This step is for manual confirmation/logging
+          echo "📚 Documentation changes pushed to main"
+          echo "🔄 CMS will sync automatically via webhook"
+          echo ""
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo "Message: ${{ github.event.head_commit.message }}"
+
+      - name: Manual sync trigger (optional)
+        if: github.event.inputs.force_sync == 'true'
+        env:
+          CMS_URL: ${{ secrets.CMS_URL }}
+          CMS_API_TOKEN: ${{ secrets.CMS_API_TOKEN }}
+        run: |
+          if [ -n "$CMS_URL" ] && [ -n "$CMS_API_TOKEN" ]; then
+            curl -X POST "${CMS_URL}/api/github-sync/sync" \
+              -H "Authorization: Bearer ${CMS_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d '{"branch": "main"}'
+            echo "✅ Manual sync triggered"
+          else
+            echo "⚠️ CMS_URL or CMS_API_TOKEN not configured"
+          fi
