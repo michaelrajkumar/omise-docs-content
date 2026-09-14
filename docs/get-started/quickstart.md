@@ -71,3 +71,4 @@ Use any future expiry date and any 3-digit CVV.
 - [Accept Credit Cards](/accept-credit-cards)
 - [Set up Webhooks](/webhooks)
 - [Go Live Checklist](/go-live)
+<!-- Sync test 3: Mon Sep 14 14:33:43 +07 2026 -->
