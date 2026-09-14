@@ -128,3 +128,4 @@ Need help? Check out these resources:
 - [Support Portal](https://support.omise.co) - Contact our support team
 - [GitHub](https://github.com/omise) - Open source libraries and examples
 <!-- Sync test: Mon Sep 14 14:15:31 +07 2026 -->
+<!-- Sync test 2: Mon Sep 14 14:23:27 +07 2026 -->
